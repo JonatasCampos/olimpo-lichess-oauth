@@ -5,11 +5,12 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 const BOT_SECRET = process.env.BOT_SECRET;
-const LICHESS_CLIENT_ID = 'olimpo-chess-club';
 
+const LICHESS_CLIENT_ID = 'olimpo-chess-club';
 const LICHESS_REDIRECT_URI = 'https://olimpo-lichess-oauth.onrender.com/lichess/callback';
 
 const autenticacoes = {};
+const vinculos = {};
 
 app.use(express.json());
 
@@ -50,37 +51,6 @@ function criarLinkLichess(state, codeChallenge) {
 
     return url.toString();
 }
-
-app.post('/vinculo/remove', verificarSecret, (req, res) => {
-    const { jid, grupo } = req.body;
-
-    if (!jid || !grupo) {
-        return res.status(400).json({
-            erro: 'jid e grupo são obrigatórios'
-        });
-    }
-
-    for (const state of Object.keys(autenticacoes)) {
-        const autenticacao = autenticacoes[state];
-
-        if (
-            autenticacao.jid === jid &&
-            autenticacao.grupo === grupo
-        ) {
-            delete autenticacoes[state];
-        }
-    }
-
-    if (vinculos[jid] && vinculos[jid].grupo === grupo) {
-        delete vinculos[jid];
-    }
-
-    salvarDados();
-
-    res.json({
-        sucesso: true
-    });
-});
 
 app.get('/', (req, res) => {
     res.send('Olimpo Chess Club - OAuth online!');
@@ -177,13 +147,8 @@ app.get('/lichess/callback', async (req, res) => {
 
             autenticacao.status = 'erro';
 
-            autenticacao.erro =
-                token.error_description ||
-                token.error ||
-                'Erro na autorização';
-
             return res.status(400).send(
-                'Não foi possível concluir a autenticação. Volte ao WhatsApp e tente novamente.'
+                'Não foi possível concluir a autenticação.'
             );
         }
 
@@ -204,13 +169,19 @@ app.get('/lichess/callback', async (req, res) => {
             );
         }
 
+        vinculos[autenticacao.grupo] ??= {};
+
+        vinculos[autenticacao.grupo][autenticacao.jid] = {
+            lichessId: conta.id,
+            lichessUsername: conta.username
+        };
+
         autenticacao.status = 'concluido';
         autenticacao.lichessId = conta.id;
         autenticacao.lichessUsername = conta.username;
-        autenticacao.accessToken = token.access_token;
 
         console.log(
-            `Lichess vinculada: ${conta.username}`
+            `${autenticacao.jid} vinculou ${conta.username}`
         );
 
         res.send(`
@@ -244,12 +215,68 @@ app.get('/lichess/callback', async (req, res) => {
 
         autenticacao.status = 'erro';
 
-        autenticacao.erro = erro.message;
-
         res.status(500).send(
             'Erro interno ao processar a autenticação.'
         );
     }
+});
+
+app.get('/vinculo', verificarSecret, (req, res) => {
+    const jid = req.query.jid;
+    const grupo = req.query.grupo;
+
+    if (!jid || !grupo) {
+        return res.status(400).json({
+            erro: 'jid e grupo são obrigatórios'
+        });
+    }
+
+    const vinculo = vinculos[grupo]?.[jid];
+
+    if (!vinculo) {
+        return res.json({
+            vinculado: false
+        });
+    }
+
+    res.json({
+        vinculado: true,
+        lichessId: vinculo.lichessId,
+        lichessUsername: vinculo.lichessUsername
+    });
+});
+
+app.post('/vinculo/remove', verificarSecret, (req, res) => {
+    const { jid, grupo } = req.body;
+
+    if (!jid || !grupo) {
+        return res.status(400).json({
+            erro: 'jid e grupo são obrigatórios'
+        });
+    }
+
+    if (vinculos[grupo]?.[jid]) {
+        delete vinculos[grupo][jid];
+
+        console.log(
+            `Vínculo removido: ${jid}`
+        );
+    }
+
+    for (const state of Object.keys(autenticacoes)) {
+        const autenticacao = autenticacoes[state];
+
+        if (
+            autenticacao.jid === jid &&
+            autenticacao.grupo === grupo
+        ) {
+            delete autenticacoes[state];
+        }
+    }
+
+    res.json({
+        sucesso: true
+    });
 });
 
 app.get('/auth/status/:state', verificarSecret, (req, res) => {
