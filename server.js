@@ -51,6 +51,37 @@ function criarLinkLichess(state, codeChallenge) {
     return url.toString();
 }
 
+app.post('/vinculo/remove', verificarSecret, (req, res) => {
+    const { jid, grupo } = req.body;
+
+    if (!jid || !grupo) {
+        return res.status(400).json({
+            erro: 'jid e grupo são obrigatórios'
+        });
+    }
+
+    for (const state of Object.keys(autenticacoes)) {
+        const autenticacao = autenticacoes[state];
+
+        if (
+            autenticacao.jid === jid &&
+            autenticacao.grupo === grupo
+        ) {
+            delete autenticacoes[state];
+        }
+    }
+
+    if (vinculos[jid] && vinculos[jid].grupo === grupo) {
+        delete vinculos[jid];
+    }
+
+    salvarDados();
+
+    res.json({
+        sucesso: true
+    });
+});
+
 app.get('/', (req, res) => {
     res.send('Olimpo Chess Club - OAuth online!');
 });
